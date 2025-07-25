@@ -16,6 +16,10 @@ public class Player : MonoBehaviour
     [SerializeField] public bool death;
     [SerializeField] public int maxHp;
     [SerializeField] public int hp;
+    [SerializeField] public float maxStamina;
+    [SerializeField] public float stamina;
+    [SerializeField] public float useStamina;
+    [SerializeField] public float recoverStamina;
     
     [Header("CAMERA")]
     [SerializeField] protected Transform camera;
@@ -66,16 +70,23 @@ public class Player : MonoBehaviour
     [SerializeField] protected ParticleSystem slash4C;
     [SerializeField] protected ParticleSystem slash5;
 
-    void Start()
+    private void Awake()
     {
-        if (_player != null)
+        if (_player != null && _player != this)
         {
-            Destroy(this.gameObject);
+            Destroy(gameObject); // 또는 return;
             return;
         }
+
+        _player = this;
+    }
+
+    void Start()
+    {
         _player = this;
         hp = maxHp;
         change = true;
+        stamina = maxStamina;
     }
     
     private void FixedUpdate()
@@ -87,7 +98,7 @@ public class Player : MonoBehaviour
     void Update()
     {
         Death();
-        if (death)
+        if (death || GameManager.instance.pause || GameManager.instance.gameOver)
         {
             return;
         }
@@ -143,11 +154,46 @@ public class Player : MonoBehaviour
             // 오일러를 쿼터니언 회전값으로, 그걸 기준으로 앞을보는 벡터를 반환
             Vector3 moveDir = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
             Controller.Move(moveDir.normalized * moveSpeed * Time.deltaTime);
+            UseStamina();
             _animator.SetBool("run", true);
+            if (stamina <= 20)
+            {
+                _animator.SetBool("tired", true);
+            }
+            else
+            {
+                _animator.SetBool("tired", false);
+            }
         }
         else
         {
             _animator.SetBool("run", false);
+            _animator.SetBool("tired", false);
+            RecoverStamina();
+        }
+    }
+
+    void UseStamina()
+    {
+        if (stamina > 0f)
+        {
+            stamina -= useStamina * Time.deltaTime;
+        }
+        else
+        {
+            stamina = 0f;
+        }
+    }
+
+    void RecoverStamina()
+    {
+        if (stamina < maxStamina)
+        {
+            stamina += recoverStamina * Time.deltaTime;
+        }
+        else
+        {
+            stamina = maxStamina;
         }
     }
     
@@ -275,31 +321,31 @@ public class Player : MonoBehaviour
     //보이스 음성
     public void fxVoiceJump()
     {
-        AudioController._AC.ComboFX(AudioController._AC.fxVoiceJump);
+        AudioController._AC.VoiceFX(AudioController._AC.fxVoiceJump);
     }
     public void fxVoiceCombo1()
     {
-        AudioController._AC.ComboFX(AudioController._AC.fxVoiceCombo1);
+        AudioController._AC.VoiceFX(AudioController._AC.fxVoiceCombo1);
     }
     public void fxVoiceCombo2()
     {
-        AudioController._AC.ComboFX(AudioController._AC.fxVoiceCombo2);
+        AudioController._AC.VoiceFX(AudioController._AC.fxVoiceCombo2);
     }
     public void fxVoiceCombo4()
     {
-        AudioController._AC.ComboFX(AudioController._AC.fxVoiceCombo4);
+        AudioController._AC.VoiceFX(AudioController._AC.fxVoiceCombo4);
     }
     public void fxVoiceCombo5()
     {
-        AudioController._AC.ComboFX(AudioController._AC.fxVoiceCombo5);
+        AudioController._AC.VoiceFX(AudioController._AC.fxVoiceCombo5);
     }
     public void fxDamage()
     {
-        AudioController._AC.SoundFX(AudioController._AC.fxDamage);
+        AudioController._AC.VoiceFX(AudioController._AC.fxDamage);
     }
     public void fxDead()
     {
-        AudioController._AC.SoundFX(AudioController._AC.fxDeath);
+        AudioController._AC.VoiceFX(AudioController._AC.fxDeath);
     }
     
     public void Slash2(){  slash2.Play(); }
@@ -398,14 +444,19 @@ public class Player : MonoBehaviour
     }
     public void ComboCancle()
     {
-        // Debug.Log("cancle");
-        if (useEspada && waitEspada &&  idCombo != 5)
+        // Debug.Log("cancel");
+        
+    }
+
+    public void reset()
+    {
+        if (useEspada && waitEspada && idCombo != 5)
             return;
+        idCombo = 0;
+        _animator.SetInteger("IdCombo", idCombo);
         jumpWait = false;
         useEspada = false;
         waitEspada = false;
-        idCombo = 0;
-        _animator.SetInteger("IdCombo", idCombo);
     }
     
     // 점프 이벤트
@@ -435,7 +486,7 @@ public class Player : MonoBehaviour
     {
         if (hp <= 0)
         {
-            Debug.Log("player death");
+            // Debug.Log("player death");
             death = true;
             _animator.SetTrigger("death");
         }

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.UI;
 using Random = UnityEngine.Random;
 
 public class Enemy : MonoBehaviour
@@ -13,8 +14,10 @@ public class Enemy : MonoBehaviour
     public bool isHit, isAttack, isVision, isPatrol, isdeath;
 
     [Header("I.A")]
-    [SerializeField] protected int hp = 100;
+    [SerializeField] protected int hp;
+    [SerializeField] protected int maxHp = 100;
     [SerializeField] protected Animator _animator;
+    public Slider sliderHp;
 
     public NavMeshAgent navi;
     public Transform player;
@@ -39,14 +42,17 @@ public class Enemy : MonoBehaviour
 
     void Start()
     {
+        hp = maxHp;
         isPatrol = true;
     }
     void Update()
     {
+        UpdatePlayer();
         if (isdeath)
         {
             return;
         }
+
         
         if (isVision || isHit)
         {
@@ -104,6 +110,11 @@ public class Enemy : MonoBehaviour
             Alert();
         }
         Distance();
+    }
+    
+    void UpdatePlayer()
+    {
+        sliderHp.value = (float)hp/maxHp;
     }
     
     // 순찰함수

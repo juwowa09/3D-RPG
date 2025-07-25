@@ -38177,8 +38177,15 @@ AnimationClip:
     floatParameter: 0
     intParameter: 0
     messageOptions: 0
-  - time: 0.95
+  - time: 0.81666666
     functionName: ComboCancle
+    data: 
+    objectReferenceParameter: {fileID: 0}
+    floatParameter: 0
+    intParameter: 0
+    messageOptions: 0
+  - time: 1.0166667
+    functionName: reset
     data: 
     objectReferenceParameter: {fileID: 0}
     floatParameter: 0

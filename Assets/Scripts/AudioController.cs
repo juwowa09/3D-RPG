@@ -16,6 +16,9 @@ public class AudioController : MonoBehaviour
     [Header("Hud")] 
     public AudioClip fxMenu;
     public AudioClip fxGameOver;
+    public AudioClip fxConfirm;
+    public AudioClip fxCancel;
+    public AudioClip fxButton;
     
     [Header("Equip")]
     public AudioClip fxPutEspadaFXA;
@@ -59,8 +62,8 @@ public class AudioController : MonoBehaviour
     
     public void VoiceFX(AudioClip fx)
     {
-        sourceFX.clip = fx;
-        sourceFX.PlayOneShot(fx);
+        sourceVoice.clip = fx;
+        sourceVoice.PlayOneShot(fx);
     }
     
     public void MenuFX(AudioClip fx)
@@ -70,6 +73,6 @@ public class AudioController : MonoBehaviour
     }public void OverFX(AudioClip fx)
     {
         sourceHudFX.clip = fx;
-        sourceHudFX.PlayOneShot(fx, 0.05f);
+        sourceHudFX.PlayOneShot(fx, 0.3f);
     }
 }

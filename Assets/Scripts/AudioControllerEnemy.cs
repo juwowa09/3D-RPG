@@ -11,6 +11,7 @@ public class AudioControllerEnemy : MonoBehaviour
     
     [Header("EnemyAttack")]
     public AudioClip fxAttack1;
+    public AudioClip fxEscudo;
     
     [Header("EnemyVoice")]
     public AudioClip fxEnemy1;

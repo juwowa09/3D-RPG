@@ -7,6 +7,9 @@ TagManager:
   - Ground
   - Aqua
   - Enemy
+  - Escudo
+  - EscudoGB
+  - Collectible
   layers:
   - Default
   - TransparentFX
@@ -16,7 +19,7 @@ TagManager:
   - UI
   - Ground
   - Damage
-  - 
+  - targetLayer
   - 
   - 
   - 

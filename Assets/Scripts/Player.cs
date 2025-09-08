@@ -2,7 +2,10 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
+using Cinemachine;
+using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.UIElements;
 
 public class Player : MonoBehaviour
@@ -10,7 +13,7 @@ public class Player : MonoBehaviour
     public static Player _player;
     [Header("Player")]
     [SerializeField] protected CharacterController Controller;
-    [SerializeField] protected Animator _animator;
+    [SerializeField] public Animator _animator;
     private Vector3 direct;
     [SerializeField] protected float moveSpeed;
     [SerializeField] public bool death;
@@ -23,15 +26,37 @@ public class Player : MonoBehaviour
     
     [Header("CAMERA")]
     [SerializeField] protected Transform camera;
+    public GameObject camPlayer;
     [SerializeField] protected float timeRotation;
     private float targetAngle;
     private float angle;
     private float speedRotation;
 
+    [Header("Z-target")] 
+    public CinemachineVirtualCamera zCam;
+    public bool activeZtarget;
+    public bool activeStrafe;
+    public LayerMask targetLayer;
+    public Collider target;
+    public float disToPlayer = 20f;
+    [Range(0,100)]
+    public float radius = 20f;
+    [Range(-1,1)]
+    public float angleLimit = 0.35f;
+
+    public Camera main;
+    public RawImage imgZtarget;
+    [Range(0, 100)] public float imgVelocity = 1f;
+    public float imgOffset = 1.5f;
+    
+
     [Header("JUMP")]
     [SerializeField] protected Transform detector;
     public LayerMask groundLayer;
     public bool isGround = false;
+    public bool isStelf;
+    public bool isBlock;
+    public bool isDash;
     public bool jumpWait;
     public float jumpHeight;
     public float gravity = -19.62f;
@@ -40,7 +65,7 @@ public class Player : MonoBehaviour
     [Header("Magic")] 
     [SerializeField] protected Transform[] transformMagic;
     [SerializeField] protected GameObject[] magics;
-    [SerializeField] protected bool waitMagic;
+    [SerializeField] public bool waitMagic;
     [SerializeField] protected int idMagic;
 
     [Header("Custormizing")] 
@@ -56,11 +81,11 @@ public class Player : MonoBehaviour
     
     [Header("Attack")]
     //콤보용 변수
-    [SerializeField] protected bool waitEspada;
+    [SerializeField] public bool waitEspada;
     //공격용 변수
-    [SerializeField] protected bool useEspada;
-    [SerializeField] protected bool modeEscudo;
-    private int idCombo;
+    [SerializeField] public bool useEspada;
+    [SerializeField] public bool modeEscudo;
+    [SerializeField] public int idCombo;
 
     [Header("Slash")] 
     [SerializeField] protected ParticleSystem slash1;
@@ -69,6 +94,13 @@ public class Player : MonoBehaviour
     [SerializeField] protected ParticleSystem slash4B;
     [SerializeField] protected ParticleSystem slash4C;
     [SerializeField] protected ParticleSystem slash5;
+
+    [Header("Dash")] 
+    [SerializeField] public float tempoDash;
+    [SerializeField] public float velDash;
+    
+    
+    
 
     private void Awake()
     {
@@ -87,6 +119,8 @@ public class Player : MonoBehaviour
         hp = maxHp;
         change = true;
         stamina = maxStamina;
+        camPlayer.SetActive(true);
+        zCam.gameObject.SetActive(false);
     }
     
     private void FixedUpdate()
@@ -106,56 +140,229 @@ public class Player : MonoBehaviour
         float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
         direct = new Vector3(horizontal, 0, vertical);
+        _animator.SetFloat("horizontal",horizontal);
+        _animator.SetFloat("vertical",vertical);
         
         Controller.Move(forceY * Time.deltaTime);
         
-        controll();
-        run();
-        walk();
+        Controll();
+        Ztarget();
     }
 
-    void walk()
+    void Controll()
+    {
+        if (!isBlock)
+        {
+            //jump
+            if (Input.GetKeyDown(KeyCode.Space) && isGround && !jumpWait && !change && !waitMagic)
+            {
+                _animator.SetBool("jump", true);
+                forceY.y = Mathf.Sqrt(jumpHeight * gravity * -2);
+            }
+            else
+            {
+                forceY.y += gravity * Time.deltaTime;
+                _animator.SetBool("jump", false);
+                if (isGround && forceY.y < 0)
+                    forceY.y = -1f;
+            }
+
+            //magic
+            if (Input.GetButtonDown("Fire1") && !waitMagic && !modeEscudo && isGround && !change && !jumpWait)
+            {
+                waitMagic = true;
+                _animator.SetTrigger("Magic");
+                _animator.SetInteger("IdMagic", idMagic);
+            }
+
+            if (Input.GetButtonDown("Fire1") && modeEscudo && !waitEspada && idCombo != 5 && !change && isGround && !jumpWait)
+            {
+                useEspada = true;
+                waitEspada = true;
+                if (!activeStrafe)
+                { StartCoroutine(EspadaRotation()); }
+                idCombo++;
+                _animator.SetInteger("IdCombo", idCombo);
+                // direct 벡터 기준 + 카메라 방향으로 회전 각도 계산
+            }
+
+            // switching controller
+            if (Input.GetButtonDown("Fire2") && !modeEscudo && !waitMagic && !useEspada && !change && isGround && !jumpWait)
+            {
+                change = true;
+                _animator.runtimeAnimatorController = espada;
+                modeEscudo = true;
+            }
+
+            else if (Input.GetButtonDown("Fire2") && modeEscudo && !waitMagic && !useEspada && !change && !jumpWait )
+            {
+                change = true;
+                _animator.runtimeAnimatorController = normal;
+                _animator.SetTrigger("Take off");
+                modeEscudo = false;
+            }
+        }
+
+        if (!change && !isBlock && !waitMagic && !waitEspada)
+        {
+            Run();
+            Walk();
+            Stelf();
+            Dash();
+        }
+        else
+        { 
+            _animator.SetBool("walk",false);
+            _animator.SetBool("run",false);
+            direct = new Vector3(0, 0, 0);
+            
+        }
+    }
+
+    public void Ztarget()
+    {
+        if (Input.GetKeyDown(KeyCode.Z))
+        {
+            activeStrafe = !activeStrafe;
+            if (!activeZtarget)
+            {
+                LockTarget();
+            }
+            else
+            {
+                UnLockToTarget();
+            }
+            zCam.gameObject.SetActive(activeZtarget);
+            camPlayer.SetActive(!activeZtarget);
+        }
+
+        if (activeZtarget && target != null)
+        {
+            float dist = Vector3.Distance(transform.position, target.transform.position);
+            if (dist > radius)
+            {
+                UnLockToTarget();
+            }
+        }
+
+        if (target != null)
+        {
+            Vector3 screenPos = main.WorldToScreenPoint(target.transform.position + Vector3.up * imgOffset);
+            // 위치를 기준으로 어느방향으로 쏴라
+            Ray ray = new Ray(main.transform.position, target.transform.position - main.transform.position);
+            imgZtarget.enabled = true;
+            imgZtarget.rectTransform.position =
+                Vector3.Lerp(imgZtarget.rectTransform.position, screenPos, imgVelocity * Time.deltaTime);
+            imgZtarget.rectTransform.localScale = Vector3.one / 2;
+        }
+        else
+        {
+            imgZtarget.enabled = false;
+        }
+    }
+
+    void LockTarget()
+    {
+        Collider[] enemys = Physics.OverlapSphere(transform.position, radius, targetLayer);
+
+        Collider bestTarget = null;
+        float minDist = radius;
+        foreach (Collider c in enemys)
+        {
+            float dist = Vector3.Distance(transform.position, c.transform.position);
+            if (dist < minDist)
+            {
+                bestTarget = c;
+                minDist = dist;
+            }
+        }
+
+        if (bestTarget != null)
+        {
+            target = bestTarget;
+            zCam.LookAt = target.transform;
+            zCam.gameObject.SetActive(true);
+            activeZtarget = true;
+            camPlayer.SetActive(false);
+        }
+    }
+
+    void UnLockToTarget()
+    {
+        target = null;
+        zCam.LookAt = null;
+        camPlayer.SetActive(true);
+        zCam.gameObject.SetActive(false);
+        activeZtarget = false;
+    }
+    void Walk()
     {
         if (direct.magnitude >= 0.1f && !useEspada && !waitMagic)
         {
             // 오일러 각은 “회전 각도”, 쿼터니언 ->  각을 벡터로표현
-            // Atan2 == 1번 매개변수 -> 2번 매개변수 각도차이 + 카메라의 방향 추가
+            // Atan2 => 1번 매개변수 기준 축으로 -> 2번 매개변수 각도 차이
+            // (입력에 의한 캐릭터의 앞 방향) + 카메라의 방향 추가
              targetAngle = Mathf.Atan2( direct.x, direct.z) * Mathf.Rad2Deg + camera.eulerAngles.y;
             // 1번 각도 -> 2번 각도로 스무스하게 회전(물리적으로 부드러운 회전)
             // 쿼터니언 -> 오일러 바로 바꾸기
             angle = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetAngle, ref speedRotation, timeRotation);
             // 오일러각 -> 쿼터니언으로 변환후 할당
-            transform.rotation = Quaternion.Euler(0f, angle, 0f);
+            if (!activeStrafe)
+            {
+                transform.rotation = Quaternion.Euler(0f, angle, 0f);
+                _animator.SetBool("strafe",false);
+                _animator.SetBool("walk", true);
+            }
+            else
+            {
+                if (target != null)
+                {
+                    Vector3 dirT = (target.transform.position - transform.position).normalized;
+                    Quaternion rotate = Quaternion.LookRotation(new Vector3(dirT.x,0,dirT.z));
+                    transform.rotation = rotate;
+                    _animator.SetBool("strafe",true);
+                }
+                else
+                {
+                    activeStrafe = false;
+                }
+            }
             
             // 오일러를 쿼터니언 회전값으로, 그걸 기준으로 앞을보는 벡터를 반환
             Vector3 moveDir = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
             Controller.Move(moveDir.normalized * moveSpeed * Time.deltaTime);
-            _animator.SetBool("walk", true);
+            _animator.SetFloat("velocity", direct.magnitude);
         }
         else
         {
             _animator.SetBool("walk", false);
         }
     }
-    void run()
+    void Run()
     {
         // 누르는중
         if (Input.GetKey(KeyCode.LeftShift) && direct.magnitude >= 0.1f && !useEspada && !waitMagic)
         {
-            // 오일러 각은 “회전 각도”, 쿼터니언 ->  각을 벡터로표현
-            // Atan2 == 1번 매개변수 -> 2번 매개변수 각도차이 + 카메라의 방향 추가
-             targetAngle = Mathf.Atan2( direct.x, direct.z) * Mathf.Rad2Deg + camera.eulerAngles.y;
-            // 1번 각도 -> 2번 각도로 스무스하게 회전(물리적으로 부드러운 회전)
-            // 쿼터니언 -> 오일러 바로 바꾸기
-            angle = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetAngle, ref speedRotation, timeRotation);
-            // 오일러각 -> 쿼터니언으로 변환후 할당
-            transform.rotation = Quaternion.Euler(0f, angle, 0f);
+            if (!activeStrafe)
+            {
+                transform.rotation = Quaternion.Euler(0f, angle, 0f);
+                _animator.SetBool("run", true);
+            }
+            else
+            {
+            }
             
-            // 오일러를 쿼터니언 회전값으로, 그걸 기준으로 앞을보는 벡터를 반환
             Vector3 moveDir = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
             Controller.Move(moveDir.normalized * moveSpeed * Time.deltaTime);
-            UseStamina();
-            _animator.SetBool("run", true);
+            // 오일러 각은 “회전 각도”, 쿼터니언 ->  각을 벡터로표현
+            // Atan2 == 1번 매개변수 -> 2번 매개변수 각도차이 + 카메라의 방향 추가
+             // targetAngle = Mathf.Atan2( direct.x, direct.z) * Mathf.Rad2Deg + camera.eulerAngles.y;
+            // 1번 각도 -> 2번 각도로 스무스하게 회전(물리적으로 부드러운 회전)
+            // 쿼터니언 -> 오일러 바로 바꾸기
+            // angle = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetAngle, ref speedRotation, timeRotation);
+            // 오일러각 -> 쿼터니언으로 변환후 할당
+            // 오일러를 쿼터니언 회전값으로, 그걸 기준으로 앞을보는 벡터를 반환
+            UseStamina(0.05f);
             if (stamina <= 20)
             {
                 _animator.SetBool("tired", true);
@@ -172,9 +379,43 @@ public class Player : MonoBehaviour
             RecoverStamina();
         }
     }
-
-    void UseStamina()
+    void Stelf()
     {
+        if (change || jumpWait || useEspada || waitMagic) return;
+        if (Input.GetKey(KeyCode.C) && isGround)
+        {
+            isStelf = true;
+            _animator.SetBool("stelf", true);
+            _animator.SetFloat("velocity", direct.magnitude);
+        }
+        else
+        {
+            isStelf = false;
+            _animator.SetBool("stelf", false);
+            _animator.SetFloat("velocity", direct.magnitude);
+        }
+    }
+
+    void Dash()
+    {
+        if (jumpWait || change || isDash) 
+            return;
+        useEspada = false;
+        waitEspada = false;
+        waitMagic = false;
+        if (Input.GetKeyDown(KeyCode.F) && isGround && !isDash && stamina >= 5f)
+        {
+            idCombo = 0;
+            _animator.SetInteger("IdCombo",idCombo);
+            isDash = true;
+            _animator.SetTrigger("role");
+            StartCoroutine(IeDash());
+        }
+    }
+
+    void UseStamina(float quant)
+    {
+        stamina -= quant;
         if (stamina > 0f)
         {
             stamina -= useStamina * Time.deltaTime;
@@ -184,7 +425,6 @@ public class Player : MonoBehaviour
             stamina = 0f;
         }
     }
-
     void RecoverStamina()
     {
         if (stamina < maxStamina)
@@ -197,63 +437,6 @@ public class Player : MonoBehaviour
         }
     }
     
-    void controll()
-    {
-        //jump
-        if (Input.GetKeyDown(KeyCode.Space) && isGround && !jumpWait && !change)
-        {
-            _animator.SetBool("jump",true);
-            forceY.y = Mathf.Sqrt(jumpHeight * gravity * -2);
-        }
-        else
-        {
-            forceY.y += gravity * Time.deltaTime;
-            _animator.SetBool("jump",false);
-            if (isGround && forceY.y < 0)
-                forceY.y = -1f;
-        }
-
-        //magic
-        if (Input.GetButtonDown("Fire1") && !waitMagic && !modeEscudo && !jumpWait)
-        {
-            change = true;
-            waitMagic = true;
-            jumpWait = true;
-            // wait = true;
-            _animator.SetTrigger("Magic");
-            _animator.SetInteger("IdMagic", idMagic);
-            
-        }
-        if (Input.GetButtonDown("Fire1") && modeEscudo && !waitEspada && idCombo != 5 && !change)
-        {
-            StartCoroutine(EspadaRotation());
-            
-            idCombo++;
-            _animator.SetInteger("IdCombo",idCombo);
-            // direct 벡터 기준 + 카메라 방향으로 회전 각도 계산
-            jumpWait = true;
-            useEspada = true;
-            waitEspada = true;
-        }
-        
-        // switching controller
-        if (Input.GetButtonDown("Fire2") && !modeEscudo && !waitMagic && !change)
-        {
-            jumpWait = true;
-            change = true;
-            _animator.runtimeAnimatorController = espada;
-            modeEscudo = true;
-        } 
-        
-        else if (Input.GetButtonDown("Fire2") && modeEscudo && !useEspada && !change)
-        {
-            jumpWait = true;
-            change = true;
-            _animator.runtimeAnimatorController = normal;
-            _animator.SetTrigger("Take off");
-            modeEscudo = false;
-        }
-    }
 
     IEnumerator EspadaRotation()
     {
@@ -286,8 +469,26 @@ public class Player : MonoBehaviour
         // 보정 (끝났을 때 정확히 목표각도)
         transform.rotation = Quaternion.Euler(0f, targetAngle, 0f);
     }
+
+    IEnumerator IeDash()
+    {
+        float metro = Time.time;
+        while (Time.time <= metro + tempoDash)
+        {
+            transform.rotation = Quaternion.Euler(0f, angle, 0f);
+            // 오일러를 쿼터니언 회전값으로, 그걸 포워드 벡터에 적용해서 쿼터니언 기준으로 앞을 보는 벡터를 반환
+            Vector3 moveDir = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
+            UseStamina(0.1f);
+            yield return null;
+        }        
+        Player._player.isDash = false;
+    }
     // Event 함수
     // 음성 이벤트
+    public void fxDash()
+    {
+        AudioController._AC.SoundFX(AudioController._AC.fxDash);
+    }
     public void fxTake()
     {
         AudioController._AC.SoundFX(AudioController._AC.fxTakeEspadaFXA);
@@ -304,11 +505,13 @@ public class Player : MonoBehaviour
         AudioController._AC.ComboFX(AudioController._AC.fxCombo1);
         AudioController._AC.ComboFX(AudioController._AC.fxCombo1Espada);
         slash1.Play();
-    }public void fxCombo2()
+    }
+    public void fxCombo2()
     {
         AudioController._AC.ComboFX(AudioController._AC.fxCombo2);
         AudioController._AC.ComboFX(AudioController._AC.fxCombo2Espada);
-    }public void fxCombo4()
+    }
+    public void fxCombo4()
     {
         AudioController._AC.ComboFX(AudioController._AC.fxCombo4);
         AudioController._AC.ComboFX(AudioController._AC.fxCombo4Espada);
@@ -349,11 +552,8 @@ public class Player : MonoBehaviour
     }
     
     public void Slash2(){  slash2.Play(); }
-
     public void Slash4A(){ slash4A.Play(); }
-    
     public void Slash4B(){  slash4B.Play(); }
-
     public void Slash4C()
     {
         slash4C.Play();
@@ -361,7 +561,6 @@ public class Player : MonoBehaviour
         GameObject tempFire = Instantiate(magics[idMagic], transformMagic[idMagic].position,transformMagic[idMagic].rotation);
         Destroy(tempFire,1.5f);
     }
-    
     public void Slash5(){  slash5.Play(); }
 
     public void StopSlah()
@@ -369,7 +568,8 @@ public class Player : MonoBehaviour
         slash1.Stop();
         slash2.Stop();
         slash4A.Stop();
-        slash4B.Stop();slash4C.Stop();
+        slash4B.Stop();
+        slash4C.Stop();
         slash5.Stop();
         idMagic = 0;
     }
@@ -378,7 +578,6 @@ public class Player : MonoBehaviour
     public void Change()
     {
         // Debug.Log("change flase");
-        jumpWait = false;
         change = false;
     }
     public void Escudo()
@@ -433,37 +632,44 @@ public class Player : MonoBehaviour
         // Debug.Log("GO");
         idMagic = 0;
         waitMagic = false;
-        jumpWait = false;
-        change = false;
     }
     
     // 콤보 이벤트
     public void ComboStart()
     {
-        waitEspada = false;
+        // waitEspada = false;
     }
     public void ComboCancle()
     {
         // Debug.Log("cancel");
-        
     }
-
     public void reset()
     {
-        if (useEspada && waitEspada && idCombo != 5)
-            return;
-        idCombo = 0;
-        _animator.SetInteger("IdCombo", idCombo);
-        jumpWait = false;
-        useEspada = false;
+        // if (useEspada && waitEspada && idCombo != 5)
+        //     return;
+        // idCombo = 0;
+        // _animator.SetInteger("IdCombo", idCombo);
+        // jumpWait = false;
+        // useEspada = false;
+        // waitEspada = false;
+    }
+
+    public void Block()
+    {
+        _animator.SetTrigger("block");
+        AudioController._AC.SoundFX(AudioController._AC.fxEscudo);
+        isBlock = true;
         waitEspada = false;
+        useEspada = false;
+        waitMagic = false;
+        idCombo = 0;
+        _animator.SetInteger("IdCombo",idCombo);
     }
     
     // 점프 이벤트
     public void JumpTime(bool jump)
     {
         jumpWait = jump;
-        change = jump;
     }
     
     public void Damage(int quantity)
@@ -472,6 +678,12 @@ public class Player : MonoBehaviour
         if (hp >= 1)
         {
             hp -= quantity;
+            isBlock = true;
+            waitEspada = false;
+            useEspada = false;
+            waitMagic = false;
+            idCombo = 0;
+            _animator.SetInteger("IdCombo",idCombo);
             if (hp <= 0)
             {  
             }
@@ -489,6 +701,27 @@ public class Player : MonoBehaviour
             // Debug.Log("player death");
             death = true;
             _animator.SetTrigger("death");
+        }
+    }
+
+    void Init()
+    {
+        if (jumpWait || change)
+        {
+            Change();
+        }
+
+        Espada();
+        Escudo();
+    }
+
+    public void OnTriggerStay(Collider other)
+    {
+        if (other.gameObject.CompareTag("Collectible") && Input.GetKeyDown(KeyCode.E))
+        {
+            GameManager.instance.AddItem(other.gameObject);
+            other.gameObject.SetActive(false);
+            Debug.Log("add");
         }
     }
 }

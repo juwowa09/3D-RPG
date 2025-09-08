@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.UI;
@@ -11,12 +12,16 @@ public class Enemy : MonoBehaviour
 {
     [Space]
     [Header("MODE")]
-    public bool isHit, isAttack, isVision, isPatrol, isdeath;
+    public bool isHit, isVision, isPatrol, isdeath;
+
+    public float moveFront;
+    public bool isAttack;
+    public BoxCollider escudoGB;
 
     [Header("I.A")]
     [SerializeField] protected int hp;
     [SerializeField] protected int maxHp = 100;
-    [SerializeField] protected Animator _animator;
+    [SerializeField] public Animator _animator;
     public Slider sliderHp;
 
     public NavMeshAgent navi;
@@ -28,7 +33,6 @@ public class Enemy : MonoBehaviour
     public Vector3 rangePatrol;
     public float rangeAttack;
     public float rangeAlert;
-    public bool isRotation;
     public bool isAlert;
 
     [Header("Coroutine")]
@@ -39,6 +43,7 @@ public class Enemy : MonoBehaviour
     public AudioSource SoundFx;
 
     [Space] public int randomInt;
+    
 
     void Start()
     {
@@ -47,13 +52,12 @@ public class Enemy : MonoBehaviour
     }
     void Update()
     {
-        UpdatePlayer();
+        UpdateHP();
         if (isdeath)
         {
             return;
         }
 
-        
         if (isVision || isHit)
         {
             Rotation();
@@ -70,8 +74,14 @@ public class Enemy : MonoBehaviour
             _animator.SetBool("walkBattle",true);
             
             //갱신하면 is stop 무시됨(갱신)
-            if(!isAttack)
-                navi.destination = player.position;
+            if (isAttack)
+            {
+                 navi.isStopped = true;
+            }
+            else
+            {
+                navi.destination = player.position;   
+            }
             
             if (navi.remainingDistance <= 3.0f)
             {
@@ -112,7 +122,7 @@ public class Enemy : MonoBehaviour
         Distance();
     }
     
-    void UpdatePlayer()
+    void UpdateHP()
     {
         sliderHp.value = (float)hp/maxHp;
     }
@@ -148,11 +158,16 @@ public class Enemy : MonoBehaviour
 
     void Choice()
     {
-        randomInt = Random.Range(0, 2);
-        if (randomInt == 0)
+        randomInt = Random.Range(0, 100);
+        if (randomInt <= 20)
         {
             updatelock = true;
             StartCoroutine(IeAttack());
+        }
+        else if (randomInt > 20 && randomInt <= 60)
+        {
+            updatelock = true;
+            StartCoroutine(IeAttackB());
         }
         else
         {
@@ -187,19 +202,38 @@ public class Enemy : MonoBehaviour
         // }
     }
 
-    IEnumerator IeAttack()
+    public IEnumerator IeAttack()
     {
+        escudoGB.enabled = false;
         _animator.SetTrigger("Attack");
+        MoveFront();
         isAttack = true;
         yield return new WaitForSeconds(4.0f);
+        updatelock = false;
+        isAttack = false;
+    }
+
+    public IEnumerator IeAttackB()
+    {
+        escudoGB.enabled = false;
+        _animator.SetTrigger("AttackB");
+        MoveFront();
+        yield return new WaitForSeconds(1.0f);
+        isAttack = true;
+        yield return new WaitForSeconds(0.9f);
+        isAttack = false;
+        yield return new WaitForSeconds(5.0f);
+        isAttack = false;
         updatelock = false;
     }
 
     IEnumerator IeDefense()
     {
+        escudoGB.enabled = true;
         _animator.SetBool("defense",true);
         yield return new WaitForSeconds(3.0f);
         _animator.SetBool("defense",false);
+        // escudoGB.enabled = false;
         updatelock = false;
     }
 
@@ -248,6 +282,7 @@ public class Enemy : MonoBehaviour
         if(other.gameObject.CompareTag("Player"))
         {
             isVision = true;
+            isHit = true;
         }
     }private void OnTriggerExit(Collider other)
     {
@@ -259,6 +294,10 @@ public class Enemy : MonoBehaviour
     
     public void Damage(int quantity)
     {
+        StopCoroutine(IeAttack());
+        StopCoroutine(IeAttackB());
+        isAttack = false;
+        escudoGB.enabled = false;
         if (hp >= 1)
         {
             isHit = true;        
@@ -273,6 +312,14 @@ public class Enemy : MonoBehaviour
             }
         }
         
+    }
+    
+    
+    public void Block()
+    {
+        isAttack = false;
+        _animator.SetTrigger("block");
+        AudioControllerEnemy._GB.SoundFX(AudioControllerEnemy._GB.fxEscudo);
     }
 
     public void Death()
@@ -290,7 +337,7 @@ public class Enemy : MonoBehaviour
 
     public void resetAttack()
     {
-        Debug.Log("resetAttack");
+        // Debug.Log("resetAttack");
         isAttack = false;
     }
     
@@ -308,5 +355,18 @@ public class Enemy : MonoBehaviour
     }public void AttackFX()
     {            
         AudioControllerEnemy._GB.SoundFX(AudioControllerEnemy._GB.fxAttack1);
+    }
+
+    public void MoveFront()
+    {
+        if (navi.remainingDistance < moveFront)
+        {
+            Vector3 Dis = transform.position + moveFront * transform.forward;
+            // 이동하고싶은 내비메쉬를 지정
+            if(NavMesh.SamplePosition(Dis, out NavMeshHit hit,moveFront, NavMesh.AllAreas))
+            {
+                navi.SetDestination(hit.position);
+            }
+        }
     }
 }

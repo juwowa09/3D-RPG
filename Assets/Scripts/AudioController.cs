@@ -25,6 +25,7 @@ public class AudioController : MonoBehaviour
     public AudioClip fxPutEspadaFXB;
     public AudioClip fxTakeEspadaFXA;
     public AudioClip fxTakeEspadaFXB;
+    public AudioClip fxEscudo;
     
     [Header("Combo")]
     public AudioClip fxCombo1;
@@ -44,6 +45,9 @@ public class AudioController : MonoBehaviour
     public AudioClip fxVoiceCombo5;
     public AudioClip fxDeath;
     public AudioClip fxDamage;
+    
+    [Header("Dash")] 
+    public AudioClip fxDash;
     private void Start()
     {
         _AC = this;
